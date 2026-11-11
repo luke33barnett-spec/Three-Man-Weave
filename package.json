@@ -1,0 +1,1 @@
+{"name":"three-man-weave","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"start":"node scripts/serve.mjs","demo":"node scripts/demo.mjs","refresh":"node scripts/refresh.mjs","watch":"node scripts/watch.mjs","backtest":"node scripts/backtest.mjs","test":"node --test","check":"node scripts/check.mjs"}}

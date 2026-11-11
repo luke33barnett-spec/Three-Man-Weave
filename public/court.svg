@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 242">
+ <defs>
+  <pattern id="wood" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M0 1h32M1 0v32" stroke="#62806b" stroke-opacity=".13"/></pattern>
+  <linearGradient id="fade"><stop stop-color="#16241b"/><stop offset="1" stop-color="#284735"/></linearGradient>
+ </defs>
+ <rect x="1" y="1" width="578" height="240" rx="12" fill="url(#fade)" stroke="#45634d"/>
+ <rect x="16" y="16" width="548" height="210" rx="5" fill="url(#wood)" stroke="#65806c" stroke-opacity=".65"/>
+ <g fill="none" stroke="#65806c" stroke-opacity=".65">
+  <path d="M290 16v210M16 75h105v92H16m548-92H459v92h105M16 38h52a86 86 0 0 1 0 166H16m548-166h-52a86 86 0 0 0 0 166h52"/>
+  <circle cx="290" cy="121" r="35"/><circle cx="121" cy="121" r="29"/><circle cx="459" cy="121" r="29"/>
+  <path d="M36 110v22m508-22v22"/><circle cx="45" cy="121" r="5"/><circle cx="535" cy="121" r="5"/>
+ </g>
+ <g fill="none" stroke-linecap="round" stroke-width="3.5">
+  <path d="M106 66c82 0 87 124 174 124s116-104 198-104" stroke="#c2fb81"/>
+  <path d="M106 121c73 0 95-65 164-65s111 113 208 113" stroke="#ffbd86" stroke-dasharray="6 8"/>
+  <path d="M106 178c74 0 94-57 166-57s115 17 206-31" stroke="#a3d9bf" stroke-opacity=".8" stroke-dasharray="5 7"/>
+ </g>
+ <g stroke="#18261d" stroke-width="3"><circle cx="106" cy="66" r="7" fill="#c2fb81"/><circle cx="106" cy="121" r="7" fill="#ffbd86"/><circle cx="106" cy="178" r="7" fill="#a3d9bf"/><circle cx="478" cy="86" r="8" fill="#c2fb81"/></g>
+ <text x="380" y="213" fill="#aac6b0" font-family="monospace" font-size="10" letter-spacing="2">01 / READ THE FLOOR</text>
+</svg>
