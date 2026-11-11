@@ -21,4 +21,12 @@ const rows=Object.keys(MARKETS).flatMap((stat,i)=>{
     return {...row,ticker:'DEMO-PTS-'+t,threshold:t,projection:distribution(sim,stat,t),quote,history:[...row.history.slice(0,-1),quote]};
   })]:[row];
 });
+for(const [i,player] of ['Andre Ellis','Theo Reed','Malik Stone'].entries()){
+  for(const [threshold,ask,prob] of [[24,.51,.53],[18,.66,.90]]){
+    const quote={at,bid:ask-.04,ask,volume:400,depth:100,bidDepth:100};
+    rows.push({ticker:'DEMO-PARLAY-'+i+'-'+threshold,series:'KXNBAPTS',stat:'pts',player,threshold,gameId:'demo-'+i,
+      game:['NYK @ MIL','PHI @ CLE','DAL @ DEN'][i],start,quote,history:[quote],
+      projection:{yes:prob,mean:22,low:12,high:32},sample:24,minutes:33});
+  }
+}
 await save('public/data/board.json',{mode:'demo',at,rows,warnings:[]});

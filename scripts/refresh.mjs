@@ -1,5 +1,6 @@
-import {SERIES,ET,schedule,loadLogs,list,normalize,playerLog,pool,read,save} from './sources.mjs';
+import {K,get,SERIES,ET,schedule,loadLogs,list,normalize,playerLog,pool,read,save} from './sources.mjs';
 import {simulate,distribution,rotationShift,shotOpportunity} from '../public/model.mjs';
+import {lockSlate,gradeDecision,PICK_RULE} from '../public/picks.mjs';
 const now=new Date(), at=now.toISOString(), day=n=>ET.format(new Date(+now+n*86400000));
 const scheduleRows=await schedule(day(-27),day(1));
 const games=scheduleRows.filter(g=>!g.completed&&Date.parse(g.start)>+now&&Date.parse(g.start)<+now+30*3600000);
@@ -25,11 +26,25 @@ for(const {ticker,series,stat,player,threshold,game,quote,payout} of markets){
   }
   const profile=stat==='leader'?null:sims.get(id),sim=profile?.sim;
   const history=prior[ticker]=[...(prior[ticker]??[]).filter(q=>Date.parse(q.at)<+now&&Date.parse(q.at)>+now-25*3600000),quote].slice(-100);
-  rows.push({ticker,series,stat,player,threshold,game:game.label,start:game.start,quote,history,payout,
+  rows.push({ticker,series,stat,player,threshold,gameId:game.id,game:game.label,start:game.start,quote,history,payout,
     projection:distribution(sim,stat,threshold,payout),sample:sim?.n??0,minutes:sim?.minutes??null,role:profile?.role??null,
     usage:['pts','escalator'].includes(stat)?profile?.usage??null:null});
 }
 await save('state/quotes.json',prior);
 await save('public/data/board.json',{mode:'live',at,warnings,rows});
+const picks=await read('public/data/picks.json',{decisions:[]});
+let decisions=picks.decisions;
+const pending=decisions.filter(d=>d.status==='pending'&&Date.parse(d.start)<+now-4*3600000).slice(0,40);
+if(pending.length){
+  try{
+    const settled=await get(K,'/markets',{tickers:pending.map(d=>d.ticker).join(','),limit:pending.length});
+    if(!Array.isArray(settled.markets))throw Error('Unexpected settlement response');
+    const byTicker=new Map(settled.markets.map(m=>[m.ticker,m]));
+    decisions=decisions.map(d=>gradeDecision(d,byTicker.get(d.ticker)));
+  }catch(e){console.warn('Paper grades delayed: '+e.message);}
+}
+// Skip locking during partial collection. An incomplete candidate set cannot be ranked fairly.
+if(!warnings.length&&Date.now()-+now<=5*60000)decisions=lockSlate(rows,decisions,at);
+await save('public/data/picks.json',{rule:PICK_RULE,at,decisions});
 console.log('Matched '+rows.length+' pregame contracts across '+games.length+' scheduled games; '+logs.length+' stat lines; '+rows.filter(r=>r.projection).length+' projections.');
 if(warnings.length)console.log(warnings.join('; '));

@@ -1,5 +1,6 @@
 import {MARKETS,mid,movement,compare,scalarPayout} from './model.mjs';
 import {checkThresholds} from './price-check.mjs';
+import {tonightView} from './tonight.mjs';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const number=(v,d=0)=>Number.isFinite(v)?v.toFixed(d):'—';
@@ -8,17 +9,9 @@ const cents=v=>Number.isFinite(v)?number(v*100,1)+'¢':'—';
 const signed=v=>Number.isFinite(v)?(v>0?'+':'')+number(v*100,1)+'¢':'—';
 const fmtDate=s=>new Date(s).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 const card=(title,value,note)=>'<div class="metric"><div class="kicker">'+esc(title)+'</div><strong>'+esc(value)+'</strong><small>'+esc(note)+'</small></div>';
-let market='all', selected=null, board, research, priceAudit, live=false, stale=false,page=0;
+let market='all', selected=null, board, research, priceAudit, paper, live=false, stale=false,page=0;
 const pageSize=35;
-const legs=[];
-const basic=['pts','reb','ast','threes','stl','blk','pra'];
 const modelValue=r=>r.stat==='escalator'?r.projection?.expectedPayout:r.projection?.yes;
-function combo(){
-  const p=legs.reduce((v,r)=>v*r.projection.yes,1), ask=Number($('#combo-ask').value)/100;
-  $('#legs').innerHTML=legs.length?'<ul>'+legs.map((r,i)=>'<li>'+esc(r.player)+' · '+esc(MARKETS[r.stat][1])+contractLine(r)+' · '+pct(r.projection.yes)+' <button data-remove="'+i+'">Remove</button></li>').join('')+'</ul>':'<p class="small">No legs selected. Open a contract for its lower thresholds.</p>';
-  $('#combo-result').textContent=live&&(stale||legs.some(r=>Date.parse(r.start)<=Date.now()))?'A leg has started or the snapshot is stale. Clear expired legs and use a fresh quote.':legs.length<2?'Select two or three legs in separate games.':
-    'Approximate joint probability: '+pct(p)+(ask>0&&ask<1?' · Gap after 3¢ assumed cost: '+signed(p-ask-.03):' · Enter the actual combo ask to compare.');
-}
 function plot(history){
   const rows=history.filter(q=>mid(q)!==null);
   if(rows.length<2)return '<p class="small">A second two-sided snapshot is needed for a chart.</p>';
@@ -31,9 +24,6 @@ function detail(r){
   if(!r){$('#detail').innerHTML='<p>Select a player contract to inspect the evidence.</p>';return;}
   const p=r.projection,m=r.move,scalar=r.stat==='escalator';
   const special=['dd','td'].includes(r.stat);
-  const lower=basic.includes(r.stat)?board.rows.filter(x=>x.ticker!==r.ticker&&x.stat===r.stat&&x.player===r.player&&x.game===r.game&&x.start===r.start&&x.threshold<r.threshold&&Number.isFinite(x.projection?.yes)).sort((a,b)=>b.threshold-a.threshold).slice(0,4):[];
-  const options=basic.includes(r.stat)&&Number.isFinite(r.projection?.yes)&&!stale?
-    '<div class="combo-actions"><div class="kicker">COMBO LEGS</div><button data-leg="'+esc(r.ticker)+'">Add '+r.threshold+'+ YES</button>'+lower.map(x=>'<button data-leg="'+esc(x.ticker)+'">'+x.threshold+'+ YES · '+pct(x.projection.yes)+'</button>').join('')+'<p class="small" id="leg-message"></p></div>':'';
   $('#detail').innerHTML='<div class="kicker">CONTRACT EVIDENCE</div><h3>'+esc(r.player)+'</h3><p>'+esc(MARKETS[r.stat][0])+contractLine(r)+' · '+esc(r.game)+'</p>'+
     (r.stat==='leader'?'<p class="notice">Quote only. A tie pays a fraction of $1; a single-player probability cannot price this contract.</p>':'<div class="stats">'+[[scalar?'Expected payout':special?'Simulated hit rate':'Projection',scalar?cents(p?.expectedPayout):special?pct(p?.yes):number(p?.mean,1)],[special?'Target':'Simulated 10–90%',scalar&&p?cents(p.low)+'–'+cents(p.high):special?(r.stat==='dd'?'10+ in 2 stats':'10+ in 3 stats'):p?p.low+'–'+p.high:'—'],['Box scores',r.sample||'—'],['Expected minutes',number(r.minutes,1)]].map(([k,v])=>'<div><span class="small">'+k+'</span><strong>'+v+'</strong></div>').join('')+'</div>')+
     (Number.isFinite(r.role)?'<p class="small">Rotation shift: <strong>'+esc((r.role>0?'+':'')+number(r.role,1))+' min</strong> · last 3 appearances vs. prior 8</p>':'')+
@@ -42,7 +32,7 @@ function detail(r){
     '<div class="kicker">YES MIDPOINT</div>'+plot(r.history)+
     '<div class="stats">'+[['Price move',signed(m.delta)],['Volume change',Number.isFinite(m.flow)?number(m.flow)+' contracts':'—'],['Spread',mid(r.quote)===null?'—':cents(r.quote.ask-r.quote.bid)],['Total volume',number(r.quote.volume)]].map(([k,v])=>'<div><span class="small">'+k+'</span><strong>'+v+'</strong></div>').join('')+'</div>'+
     '<p class="small">'+esc(m.label)+'. '+(r.agree?'Move and model point in the same direction. ':'')+'Raw model gap uses the current ask and a 2¢ cost assumption. The simulation is uncalibrated; a positive gap is not a validated edge.</p>'+
-    (live?'<p class="small" style="margin-top:10px">'+esc(r.ticker)+' · Tipoff '+esc(fmtDate(r.start))+'</p>':'')+options;
+    (live?'<p class="small" style="margin-top:10px">'+esc(r.ticker)+' · Tipoff '+esc(fmtDate(r.start))+'</p>':'');
 }
 function render(){
   stale=live&&Date.now()-Date.parse(board.at)>45*60000;
@@ -74,7 +64,6 @@ function render(){
   $('#pagination').hidden=pages<2;$('#prev').disabled=page===0;$('#next').disabled=page>=pages-1;$('#page').textContent='Page '+(page+1)+' of '+pages;
   $('#rows').innerHTML=shown.map(r=>'<tr class="'+(r.ticker===selected?'selected':'')+'"><td><button data-ticker="'+esc(r.ticker)+'" aria-pressed="'+(r.ticker===selected)+'">'+esc(r.player)+'</button><span class="small">'+esc(MARKETS[r.stat][1])+contractLine(r)+' · '+esc(r.game)+'</span></td><td>'+(r.stat==='escalator'?cents(modelValue(r))+' payout':pct(modelValue(r)))+'</td><td>'+cents(r.quote.bid)+' / '+cents(r.quote.ask)+'</td><td class="'+(r.move.confirmed?(r.move.delta>0?'up':'down'):'')+'">'+signed(r.move.delta)+'<span class="small">'+esc(r.move.label)+'</span></td><td class="'+(r.edge?.gap>0?'up':'')+'">'+(r.edge?signed(r.edge.gap)+' '+r.edge.side:'—')+'</td></tr>').join('');
   detail(found.find(r=>r.ticker===selected));
-  combo();
 }
 const contractLine=r=>['dd','td','leader','escalator'].includes(r.stat)?'':' '+r.threshold+'+';
 function calibrationCard(c){
@@ -102,37 +91,31 @@ function renderResearch(){
   '<div class="research-card"><h2>How we test for an edge</h2><ul><li><b>Probability accuracy:</b> Brier score is the average of (forecast − outcome)². Lower is better. The paired comparison asks whether movement adds information beyond the price already available at the decision time.</li><li><b>Fixed rule:</b> Require a 4¢ midpoint move, at least 50 contracts traded between observations, and bid–ask spreads no wider than 10¢. Add half of the signed move to the later midpoint; keep all other forecasts unchanged.</li><li><b>Economic test:</b> Compare adjusted probability against the side’s ask, subtract a flat 2¢ cost, and simulate one contract only if at least 2¢ remains. Candle closes are quote proxies; depth and actual fills aren’t verified.</li><li><b>No in-game data:</b> Use quotes before scheduled tipoff. Pick one threshold per player-game by early midpoint proximity to 50%, before checking the later quote. The recent sample is exploratory; freeze rules and validate prospectively before claiming an edge.</li></ul><p>Coverage: '+(r?.listed??0)+' settled contracts fetched → '+(r?.matched??0)+' matched to games → '+(r?.earlyOpen??0)+' open at T−90 → '+(r?.distinct??0)+' selected using early quotes → '+(r?.paired??0)+' usable quote pairs → '+(a?.n??0)+' binary settlements scored.</p></div>'+
   '<div class="research-card"><h2>Player simulation</h2><p>4,000 draws resample each player’s recent game lines together, preserving relationships between stats in combos. Recent games get more weight; at least six played games are required. Probabilities are conditional on playing. This is a baseline without an injury, matchup, or lineup adjustment.</p><p>The replay does not validate the live board’s move + model agreement filter as a trading strategy.</p></div>';
 }
-function tab(isResearch){
-  $('#board').hidden=isResearch;$('#research').hidden=!isResearch;
-  $('#board-tab').setAttribute('aria-pressed',!isResearch);$('#research-tab').setAttribute('aria-pressed',isResearch);
-  $('#title').innerHTML=(isResearch?'The edge test':'Three Man Weave')+'<span>.</span>';
-  $('#subtitle').textContent=isResearch?'Test forecasts against the current quote, on later games and after costs.':'Player projections, market prices, and a test for what actually adds an edge.';
+function tab(view){
+  for(const id of ['tonight','board','research']){
+    $('#'+id).hidden=id!==view;
+    $('#'+id+'-tab').setAttribute('aria-pressed',id===view);
+  }
+  $('#title').innerHTML=({tonight:'Three Man Weave',board:'All NBA props',research:'The edge test'})[view]+'<span>.</span>';
+  $('#subtitle').textContent=({tonight:'Tonight’s shortlist, suggested combos, and the price that makes each idea worth a look.',board:'Browse player projections, Kalshi quotes, and Price Check.',research:'Test forecasts against the current quote, on later games and after costs.'})[view];
 }
-$('#board-tab').onclick=()=>tab(false);$('#research-tab').onclick=()=>tab(true);
+for(const id of ['tonight','board','research'])$('#'+id+'-tab').onclick=()=>tab(id);
+tab('tonight');
 $('#search').oninput=()=>{page=0;if(board)render();};$('#filter').onchange=()=>{page=0;if(board)render();};
 $('#prev').onclick=()=>{page--;render();};$('#next').onclick=()=>{page++;render();};
 $('#markets').onclick=e=>{const k=e.target.closest('button')?.dataset.market;if(k){market=k;page=0;render();$('#markets').querySelector('[aria-pressed=true]')?.focus();}};
 $('#rows').onclick=e=>{const k=e.target.closest('button')?.dataset.ticker;if(k){selected=k;render();[...$('#rows').querySelectorAll('button')].find(b=>b.dataset.ticker===k)?.focus();}};
-$('#detail').onclick=e=>{
-  const k=e.target.closest('button')?.dataset.leg;if(!k)return;
-  const r=board.rows.find(r=>r.ticker===k), msg=$('#leg-message');
-  if(!r||stale||live&&Date.parse(r.start)<=Date.now())return;
-  const same=legs.findIndex(x=>x.ticker===r.ticker);
-  if(same>=0){msg.textContent='This leg is already in the calculator.';return;}
-  if(legs.some(x=>x.start===r.start&&x.game===r.game)){msg.textContent='Choose legs from different games to avoid same-game correlation.';return;}
-  if(legs.length>=3){msg.textContent='Remove a leg before adding another.';return;}
-  legs.push(r);combo();$('#combo-panel').open=true;msg.textContent='Added to combo calculator.';
-};
-$('#legs').onclick=e=>{const n=e.target.closest('button')?.dataset.remove;if(n!==undefined){legs.splice(Number(n),1);combo();}};
-$('#combo-ask').oninput=combo;
-combo();
 async function json(path){const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw Error(path+' unavailable');return r.json();}
-const [b,r,a]=await Promise.allSettled([json('data/board.json'),json('data/research.json'),json('data/price-audit.json')]);
-research=r.value;priceAudit=a.value;renderResearch();
-if(b.status==='fulfilled'){board=b.value;live=board.mode==='live';render();}
-else{$('#feed').textContent='UNAVAILABLE';$('#notice').textContent='Board data could not load. Start the project server rather than opening the HTML file directly.';}
+const [b,r,a,p]=await Promise.allSettled([json('data/board.json'),json('data/research.json'),json('data/price-audit.json'),json('data/picks.json')]);
+research=r.value;priceAudit=a.value;paper=p.value;renderResearch();
+if(b.status==='fulfilled'){board=b.value;live=board.mode==='live';render();tonightView($('#tonight'),board,paper);}
+else{$('#feed').textContent='UNAVAILABLE';$('#tonight').textContent=$('#notice').textContent='Board data could not load. Start the project server rather than opening the HTML file directly.';}
 setInterval(async()=>{
   if(document.hidden||!live)return;
-  try{const next=await json('data/board.json');if(next.mode==='live')board=next;}catch{}
+  const previous=board.at,view=$('#tonight');
+  const [next,log]=await Promise.allSettled([json('data/board.json'),json('data/picks.json')]);
+  if(next.value?.mode==='live')board=next.value;
+  if(log.value)paper=log.value;
+  if(previous!==board.at||(view.dataset.fresh==='true'&&Date.now()-Date.parse(view.dataset.quoteAt)>6*60000))tonightView(view,board,paper);
   render();
 },60000);
