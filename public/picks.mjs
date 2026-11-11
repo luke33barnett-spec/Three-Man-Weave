@@ -39,12 +39,12 @@ export function gradeDecision(p,m){
   const payout=p.side==='YES'?y:1-y;
   return {...p,payout,status:y===0||y===1?(payout===1?'win':'loss'):'fractional',net:payout-p.price-p.cost};
 }
-export function suggestCombo(rows,length=2){
+export function suggestCombo(rows,length=2,{minSample=12}={}){
   if(![2,3].includes(length))return null;
   const byPlayer=new Map(),byGame=new Map();
   for(const r of rows){
     const q=r.quote,raw=r.projection?.yes;
-    if(r.stat!=='pts'||r.sample<12||!Number.isFinite(raw)||!q||!(q.bid>0&&q.ask<1&&q.bid<q.ask&&q.ask-q.bid<=.080001&&q.depth>=1))continue;
+    if(r.stat!=='pts'||r.sample<minSample||!Number.isFinite(raw)||!q||!(q.bid>0&&q.ask<1&&q.bid<q.ask&&q.ask-q.bid<=.080001&&q.depth>=1))continue;
     const gameId=r.gameId??r.game+'|'+r.start;
     const key=JSON.stringify([gameId,r.player]);
     const set=byPlayer.get(key)??[];

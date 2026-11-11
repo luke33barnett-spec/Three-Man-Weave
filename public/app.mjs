@@ -1,6 +1,7 @@
 import {MARKETS,mid,movement,compare,scalarPayout} from './model.mjs';
 import {checkThresholds} from './price-check.mjs';
 import {tonightView} from './tonight.mjs';
+import {payoutMultiple,formatMultiple} from './payout.mjs';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const number=(v,d=0)=>Number.isFinite(v)?v.toFixed(d):'—';
@@ -9,7 +10,7 @@ const cents=v=>Number.isFinite(v)?number(v*100,1)+'¢':'—';
 const signed=v=>Number.isFinite(v)?(v>0?'+':'')+number(v*100,1)+'¢':'—';
 const fmtDate=s=>new Date(s).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
 const card=(title,value,note)=>'<div class="metric"><div class="kicker">'+esc(title)+'</div><strong>'+esc(value)+'</strong><small>'+esc(note)+'</small></div>';
-let market='all', selected=null, board, research, priceAudit, paper, live=false, stale=false,page=0;
+let market='all', selected=null, board, research, priceAudit, pointsStudy, comboStudy, paper, parlayLog, live=false, stale=false,page=0;
 const pageSize=35;
 const modelValue=r=>r.stat==='escalator'?r.projection?.expectedPayout:r.projection?.yes;
 function plot(history){
@@ -62,7 +63,11 @@ function render(){
   $('#count').textContent=found.length+' shown · Select a player to inspect the quote history';
   $('#empty').hidden=!!found.length;
   $('#pagination').hidden=pages<2;$('#prev').disabled=page===0;$('#next').disabled=page>=pages-1;$('#page').textContent='Page '+(page+1)+' of '+pages;
-  $('#rows').innerHTML=shown.map(r=>'<tr class="'+(r.ticker===selected?'selected':'')+'"><td><button data-ticker="'+esc(r.ticker)+'" aria-pressed="'+(r.ticker===selected)+'">'+esc(r.player)+'</button><span class="small">'+esc(MARKETS[r.stat][1])+contractLine(r)+' · '+esc(r.game)+'</span></td><td>'+(r.stat==='escalator'?cents(modelValue(r))+' payout':pct(modelValue(r)))+'</td><td>'+cents(r.quote.bid)+' / '+cents(r.quote.ask)+'</td><td class="'+(r.move.confirmed?(r.move.delta>0?'up':'down'):'')+'">'+signed(r.move.delta)+'<span class="small">'+esc(r.move.label)+'</span></td><td class="'+(r.edge?.gap>0?'up':'')+'">'+(r.edge?signed(r.edge.gap)+' '+r.edge.side:'—')+'</td></tr>').join('');
+  $('#rows').innerHTML=shown.map(r=>{
+    const scalar=r.stat==='escalator'||r.stat==='leader';
+    const prices=scalar?cents(r.quote.ask)+' / '+cents(1-r.quote.bid):formatMultiple(payoutMultiple(r.quote.ask))+' / '+formatMultiple(payoutMultiple(1-r.quote.bid));
+    return '<tr class="'+(r.ticker===selected?'selected':'')+'"><td><button data-ticker="'+esc(r.ticker)+'" aria-pressed="'+(r.ticker===selected)+'">'+esc(r.player)+'</button><span class="small">'+esc(MARKETS[r.stat][1])+contractLine(r)+' · '+esc(r.game)+'</span></td><td>'+(r.stat==='escalator'?cents(modelValue(r))+' payout':pct(modelValue(r)))+'</td><td>'+prices+(scalar?'<span class="small">Prices · variable payout</span>':'')+'</td><td class="'+(r.move.confirmed?(r.move.delta>0?'up':'down'):'')+'">'+signed(r.move.delta)+'<span class="small">'+esc(r.move.label)+'</span></td><td class="'+(r.edge?.gap>0?'up':'')+'">'+(r.edge?signed(r.edge.gap)+' '+r.edge.side:'—')+'</td></tr>';
+  }).join('');
   detail(found.find(r=>r.ticker===selected));
 }
 const contractLine=r=>['dd','td','leader','escalator'].includes(r.stat)?'':' '+r.threshold+'+';
@@ -83,7 +88,10 @@ function renderResearch(){
   const roleCard=role?.status==='ok'?'<div class="research-card"><div class="experiment-label">NEW VARIABLE / PLAYER ROLE</div><h2>Does a rotation shift add information?</h2><p>Subtract average minutes in games 4–11 from average minutes in the last three appearances. '+(role.fixed?'Too few earlier eligible contracts to fit; test a fixed adjustment of +0.08 log-odds per eight added minutes. ':role.train+' earlier contracts used to fit. ')+role.test+' later contracts scored.</p><div class="metrics">'+[card('KALSHI',number(role.market,5),'Baseline Brier'),card('WITHOUT ROTATION',number(role.plain,5),role.fixed?'Market only':'Price + player model'),card('WITH ROTATION',number(role.withRole,5),'Forecast with minutes shift'),card('INCREMENTAL GAIN',number(role.incrementalGain,5),'Positive is better')].join('')+'</div><p>'+(role.ci?'95% day-block interval for gain: '+number(role.ci[0],5)+' to '+number(role.ci[1],5)+'. ':'')+(role.marketGain>0?'The rotation version scored better than Kalshi in this sample.':'The rotation version did not beat Kalshi in this sample.')+' This follow-up uses an already inspected historical window. It needs a fresh, prospective test.</p></div>':'';
   const conclusion=!a?.n?'No qualifying historical sample yet.':a.increment<=0?'The tested movement rule did not improve on the later market quote.':a.ci?.[0]>0?'The fixed rule improved the historical score in this sample. Validate on future games.':'The fixed rule scored better in this sample, but the improvement is not established.';
   const audit=priceAudit?'<div class="research-card"><div class="experiment-label">PRICE AUDIT / POINTS</div><h2>Does price checking catch anything?</h2><p>'+priceAudit.ladders.toLocaleString()+' comparable player-minute ladders across '+priceAudit.events+' games. '+priceAudit.dominance+' dominated quote observations across '+priceAudit.dominanceEvents+' games; '+priceAudit.pairs+' two-leg pairs below $1 with the cost allowance. Repeated observations can include the same contract.</p><p>Historical candle closes share a minute bucket, but do not prove simultaneous quotes, available size, fills, or profit.</p></div>':'';
-  $('#research').innerHTML=audit+calibrationCard(r?.calibration)+usageCard+roleCard+'<div class="research-card"><div class="kicker">HISTORICAL REPLAY / POINTS</div><h2>Does movement improve the forecast?</h2><p>'+conclusion+'</p>'+
+  const shot=pointsStudy?'<div class="research-card"><div class="experiment-label">MODEL LAB / POINTS</div><h2>Can shot volume beat the market?</h2><p>We forecast minutes, shot opportunities and scoring efficiency before looking at prices. Trained on '+pointsStudy.fit+' earlier box scores; compared on '+pointsStudy.n+' later contracts in '+pointsStudy.games+' games.</p><div class="metrics">'+[card('ORIGINAL MODEL',number(pointsStudy.baseline,4),'Brier score · lower is better'),card('SHOT VOLUME',number(pointsStudy.challenger,4),'Brier score'),card('KALSHI',number(pointsStudy.market,4),'Brier score'),card('SIMULATED RETURN',pct(pointsStudy.roi),pointsStudy.picks+' hypothetical entries')].join('')+'</div><p>The challenger improved on the original but did not beat the market in this replay. It has not replaced the model behind Tonight. Historical candle prices are not verified fills. This is the same historical period we have explored before, not a fresh prospective test.</p></div>':'';
+  const combo=comboStudy?'<div class="research-card"><div class="experiment-label">MODEL LAB / HISTORICAL POINTS COMBOS</div><h2>How often did the parlays hit?</h2><p>Reviewed '+comboStudy.cachedNights+' nights; '+comboStudy.quotedNights+' had pregame quotes across games. With 12 prior appearances per leg, '+comboStudy.graded+' combos qualified and '+pct(comboStudy.hit)+' hit.</p><p>Coverage checks: '+comboStudy.sensitivity.map(x=>x.minSample+' prior games: '+Math.round(x.graded*x.hit)+' of '+x.graded+' hit').join(' · ')+'. These small samples do not establish profitability. No exact combo payouts were available. This historical screen only covered points; the new nightly multi-stat card is tracked prospectively.</p></div>':'';
+  const neighbor=pointsStudy?.neighbor?'<div class="research-card"><div class="experiment-label">MODEL LAB / NEARBY LINES</div><h2>Can neighboring lines improve the price estimate?</h2><p>On '+pointsStudy.neighbor.n+' paired contracts, neighboring points thresholds scored '+number(pointsStudy.neighbor.brier,4)+' Brier versus '+number(pointsStudy.neighbor.market,4)+' for the target contract’s own midpoint (lower is better). The comparison does not establish an edge.</p></div>':'';
+  $('#research').innerHTML=shot+combo+neighbor+audit+calibrationCard(r?.calibration)+usageCard+roleCard+'<div class="research-card"><div class="kicker">HISTORICAL REPLAY / POINTS</div><h2>Does movement improve the forecast?</h2><p>'+conclusion+'</p>'+
   '<div class="metrics">'+[card('EARLY BRIER',number(a?.early,4),'T−90 minutes'),card('LATER BRIER',number(a?.late,4),'T−15 minutes'),card('WITH MOVEMENT',number(a?.signal,4),'Later midpoint + half the move'),card('COST-ADJUSTED ROI',pct(a?.roi),(a?.trades??0)+' hypothetical fills')].join('')+'</div>'+
   '<p>Sample: '+(a?.n??0)+' player-game contracts across '+(a?.games??0)+' games and '+(a?.days??0)+' dates. '+(r?esc(r.from)+' to '+esc(r.to)+'. ':'')+'Confirmed moves: '+(a?.confirmed??0)+'. Brier improvement over the later quote: '+number(a?.increment,4)+(a?.ci?' (95% day-block interval '+number(a.ci[0],4)+' to '+number(a.ci[1],4)+')':'')+'.</p>'+
   '<p>On confirmed moves alone: later Brier '+number(s?.late,4)+', movement-adjusted Brier '+number(s?.signal,4)+'. Hypothetical P&amp;L: $'+number(a?.pnl,2)+'; with another 1¢ cost per fill: $'+number(a?.stressPnl,2)+'.</p></div>'+
@@ -97,7 +105,7 @@ function tab(view){
     $('#'+id+'-tab').setAttribute('aria-pressed',id===view);
   }
   $('#title').innerHTML=({tonight:'Three Man Weave',board:'All NBA props',research:'The edge test'})[view]+'<span>.</span>';
-  $('#subtitle').textContent=({tonight:'Tonight’s shortlist, suggested combos, and the price that makes each idea worth a look.',board:'Browse player projections, Kalshi quotes, and Price Check.',research:'Test forecasts against the current quote, on later games and after costs.'})[view];
+  $('#subtitle').textContent=({tonight:'NBA picks and parlays, with the payout to look for.',board:'Browse player projections, Kalshi quotes, and Price Check.',research:'See how the models performed against the market.'})[view];
 }
 for(const id of ['tonight','board','research'])$('#'+id+'-tab').onclick=()=>tab(id);
 tab('tonight');
@@ -106,16 +114,18 @@ $('#prev').onclick=()=>{page--;render();};$('#next').onclick=()=>{page++;render(
 $('#markets').onclick=e=>{const k=e.target.closest('button')?.dataset.market;if(k){market=k;page=0;render();$('#markets').querySelector('[aria-pressed=true]')?.focus();}};
 $('#rows').onclick=e=>{const k=e.target.closest('button')?.dataset.ticker;if(k){selected=k;render();[...$('#rows').querySelectorAll('button')].find(b=>b.dataset.ticker===k)?.focus();}};
 async function json(path){const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw Error(path+' unavailable');return r.json();}
-const [b,r,a,p]=await Promise.allSettled([json('data/board.json'),json('data/research.json'),json('data/price-audit.json'),json('data/picks.json')]);
-research=r.value;priceAudit=a.value;paper=p.value;renderResearch();
-if(b.status==='fulfilled'){board=b.value;live=board.mode==='live';render();tonightView($('#tonight'),board,paper);}
+const [b,r,a,p,s,c,l]=await Promise.allSettled([json('data/board.json'),json('data/research.json'),json('data/price-audit.json'),json('data/picks.json'),json('data/points-study.json'),json('data/combo-study.json'),json('data/combos.json')]);
+research=r.value;priceAudit=a.value;paper=p.value;pointsStudy=s.value;comboStudy=c.value;parlayLog=l.value;renderResearch();
+if(b.status==='fulfilled'){board=b.value;live=board.mode==='live';render();tonightView($('#tonight'),board,paper,null,parlayLog);}
 else{$('#feed').textContent='UNAVAILABLE';$('#tonight').textContent=$('#notice').textContent='Board data could not load. Start the project server rather than opening the HTML file directly.';}
 setInterval(async()=>{
   if(document.hidden||!live)return;
   const previous=board.at,view=$('#tonight');
-  const [next,log]=await Promise.allSettled([json('data/board.json'),json('data/picks.json')]);
+  const [next,log,combos]=await Promise.allSettled([json('data/board.json'),json('data/picks.json'),json('data/combos.json')]);
   if(next.value?.mode==='live')board=next.value;
   if(log.value)paper=log.value;
-  if(previous!==board.at||(view.dataset.fresh==='true'&&Date.now()-Date.parse(view.dataset.quoteAt)>6*60000))tonightView(view,board,paper);
+  const ledgerChanged=combos.value&&combos.value.at!==parlayLog?.at;
+  if(combos.value)parlayLog=combos.value;
+  if(previous!==board.at||ledgerChanged||(view.dataset.fresh==='true'&&Date.now()-Date.parse(view.dataset.quoteAt)>6*60000))tonightView(view,board,paper,null,parlayLog);
   render();
 },60000);

@@ -1,10 +1,10 @@
 const URL_BASE='https://external-api.kalshi.com/trade-api/v2/markets';
-const tickerPattern=/^KXNBAPTS-[A-Z0-9]{8,30}-[A-Z0-9]{3,40}-\d{1,3}$/;
+const tickerPattern=/^KXNBA(?:PTS|AST|REB|3PT|STL|BLK|2D|3D|PRA)-[A-Z0-9]{8,30}-[A-Z0-9]{3,40}(?:-\d{1,3})?$/;
 const number=x=>x===null||x===''||x===undefined||!Number.isFinite(Number(x))?null:Number(x);
 const response=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export async function GET(request){
   const tickers=[...new Set((new URL(request.url).searchParams.get('tickers')??'').split(','))];
-  if(tickers.length>48||tickers.some(t=>!tickerPattern.test(t)))return response({error:'Choose up to 48 NBA points contracts.'},400);
+  if(tickers.length>48||tickers.some(t=>!tickerPattern.test(t)))return response({error:'Choose up to 48 supported NBA player contracts.'},400);
   const url=new URL(URL_BASE);
   url.search=new URLSearchParams({tickers:tickers.join(','),limit:tickers.length}).toString();
   try{
