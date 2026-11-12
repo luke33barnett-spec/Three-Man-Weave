@@ -1,1 +1,1 @@
-{"rule":"points-v1","at":"2026-11-11T22:08:13.517Z","decisions":[]}
+{"rule":"points-v1","at":"2026-11-12T02:29:00.017Z","decisions":[{"rule":"points-v1","gameId":"401909975","game":"OKC @ POR","start":"2026-11-12T03:00Z","at":"2026-11-12T02:29:00.017Z","screened":47,"ticker":"KXNBAPTS-26NOV11OKCPOR-OKCSGILGEOUSALEXANDER2-30","player":"Shai Gilgeous-Alexander","threshold":30,"side":"NO","prob":0.3859999999999999,"price":0.32999999999999996,"size":496,"market":0.32499999999999996,"gap":0.035999999999999935,"returnRate":0.10285714285714267,"cost":0.02,"status":"pending"}]}
